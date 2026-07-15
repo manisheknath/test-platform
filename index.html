@@ -322,7 +322,9 @@ function enterFullscreen(){
   if (req) req.call(el).catch(() => {});
 }
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && quizInProgress && !isPreview) {
+  if (document.fullscreenElement) {
+    els.fullscreenBanner.hidden = true; // we're in fullscreen (freshly entered or returned to) — banner has no reason to show
+  } else if (quizInProgress && !isPreview) {
     fullscreenExitCount++;
     els.fullscreenBanner.hidden = false;
     saveSession();
@@ -525,8 +527,7 @@ function startTest(resumedSession){
   quizInProgress = true;
 
   if (!resumedSession) {
-    if (!isPreview) enterFullscreen(); // user just clicked "Start test" — this is a real gesture, fullscreen is allowed
-    saveSession();
+    saveSession(); // fullscreen was already requested synchronously in the click handler, before this ran
   } else {
     // Fullscreen never survives a page reload in any browser — prompt
     // them to re-enter it themselves (requires a real click, JS can't
@@ -679,6 +680,13 @@ els.btnStart.addEventListener('click', async () => {
     alert('Please enter your name and email before starting.');
     return;
   }
+
+  // Must happen synchronously, right here, before any await —
+  // browsers only honor requestFullscreen() while it's still
+  // directly tied to the click. Calling it after an awaited
+  // network request loses that permission and silently fails.
+  if (!isPreview) enterFullscreen();
+
   if (isPreview) {
     startTest();
     return;
@@ -689,6 +697,9 @@ els.btnStart.addEventListener('click', async () => {
   if (already) {
     els.retakeNotice.hidden = false;
     els.btnStart.textContent = 'START TEST';
+    if (document.fullscreenElement) {
+      (document.exitFullscreen || (()=>{})).call(document).catch(() => {});
+    }
     return; // stays disabled — no retake
   }
   els.btnStart.textContent = 'START TEST';
