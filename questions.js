@@ -12,9 +12,9 @@ const TEST_CONFIG = {
 
   intro: "Read each question carefully. Complete all questions before submitting.",
 
-  timeLimitMinutes: 30,
+  timeLimitMinutes: 10,
 
-  deadline: "2026-12-31T23:59:59",
+  deadline: "2026-6-31T23:59:59",
 
   questions: [
 
