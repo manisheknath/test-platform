@@ -17,8 +17,8 @@ const TEST_CONFIG = {
   timeLimitMinutes: 60,
 
   // Set these before this test goes out — see the format guide.
-  startDate: "2026-07-20T09:00:00",
-  deadline: "2026-07-27T23:59:59",
+  startDate: "2026-07-17T15:00:00",
+  deadline: "2026-07-17T16:59:59",
 
   // Leave OFF for this test: Q1–Q5 and Q6–Q10 each depend on a
   // shared reading passage — shuffling could separate the passage
