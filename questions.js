@@ -1,30 +1,23 @@
 /* ============================================================
-   QUESTIONS FILE — this is the ONLY file you edit per test.
-   Keep quiz-engine.html untouched; just swap this file out
-   (or its contents) alongside it for each new test.
-
-   Variable name must stay TEST_CONFIG — the engine looks for
-   this exact name.
+   QUESTIONS FILE
+   French A2 Language Assessment
+   Total: 30 Points
    ============================================================ */
+
 const TEST_CONFIG = {
 
-  // A short code to tell tests apart at a glance, e.g. "TEST 014"
-  testCode: "TEST 001",
+  testCode: "FR-A2-001",
 
-  title: "Sample Knowledge Check",
-  intro: "Answer every question before time runs out. Your answers submit automatically when the clock hits zero.",
+  title: "French A2 Language Assessment",
 
-  // How long the taker gets once they hit "Start test", in minutes.
-  timeLimitMinutes: 15,
+  intro: "Read each question carefully. Complete all questions before submitting.",
 
-  // Hard deadline — nobody can START the test after this moment.
-  // Format: "YYYY-MM-DDTHH:MM:SS" in the taker's local time.
+  timeLimitMinutes: 30,
+
   deadline: "2026-12-31T23:59:59",
 
-  // Questions: type "mc" (multiple choice, auto-graded) or
-  // "short" (free-text, ungraded — shown to you for manual review).
   questions: [
-    
+
     // =========================
     // READING (8 points)
     // =========================
