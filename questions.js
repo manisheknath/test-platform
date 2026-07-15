@@ -17,12 +17,12 @@ const TEST_CONFIG = {
   // How long the taker gets once they hit "Start test", in minutes.
   timeLimitMinutes: 15,
 
-  // Optional — if set, blocks starting the test until this moment.
-  // Unlike the deadline, this isn't shown as a permanent label —
-  // someone who opens the link early just sees a live countdown to
-  // when it opens. Leave this line out entirely for no restriction.
-  // Same format as deadline: YYYY-MM-DD with leading zeros.
-  // startDate: "2026-07-20T09:00:00",
+  // Set this before every test. Blocks the Start button until this
+  // moment. Unlike the deadline, this is never shown anywhere on the
+  // page — someone who opens the link early just sees a live
+  // countdown to when it opens; once it passes, there's no trace of
+  // it anywhere. Same format as deadline: YYYY-MM-DD with leading zeros.
+  startDate: "2026-07-20T09:00:00",
 
   // Hard deadline — nobody can START the test after this moment.
   // Format: "YYYY-MM-DD" with leading zeros, e.g. 2026-06-25T23:59:59.
