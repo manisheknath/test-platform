@@ -119,12 +119,18 @@ button.ghost:hover{ border-color: var(--ink-soft); color: var(--ink); }
 .tag.incorrect{ background: #FBEEEC; color: var(--accent-alert); }
 .tag.ungraded{ background: var(--paper); color: var(--ink-soft); }
 .sync-status{ font-family: var(--mono); font-size: 12px; color: var(--ink-soft); text-align:center; padding: 8px 0 0; }
+.progress-label{ font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; margin-top: 6px; }
+.preview-banner{
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  text-align: center; padding: 10px 16px; background: var(--ink); color: var(--paper);
+}
 footer.actions{ display:flex; justify-content: flex-end; padding: 20px 32px 28px; }
 </style>
 </head>
 <body>
 
 <div class="sheet">
+  <div id="previewBanner" class="preview-banner" hidden>Preview mode — nothing is recorded or timed against a real deadline</div>
   <div class="eyebrow" id="eyebrow">TEST</div>
   <header class="masthead">
     <h1 id="titleDisplay">Test title</h1>
@@ -162,6 +168,7 @@ footer.actions{ display:flex; justify-content: flex-end; padding: 20px 32px 28px
         <span class="timer-clock" id="timerClock">00:00</span>
       </div>
       <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+      <div class="progress-label" id="progressLabel">0 of 0 answered</div>
     </div>
     <div id="questionsMount"></div>
     <footer class="actions">
@@ -214,6 +221,7 @@ function loadQuestionsConfig(){
    ============================================================ */
 
 const els = {
+  previewBanner: document.getElementById('previewBanner'),
   eyebrow: document.getElementById('eyebrow'),
   title: document.getElementById('titleDisplay'),
   intro: document.getElementById('introDisplay'),
@@ -224,6 +232,7 @@ const els = {
   screenQuiz: document.getElementById('screenQuiz'),
   fullscreenBanner: document.getElementById('fullscreenBanner'),
   btnReenterFullscreen: document.getElementById('btnReenterFullscreen'),
+  progressLabel: document.getElementById('progressLabel'),
   screenResults: document.getElementById('screenResults'),
   takerName: document.getElementById('takerName'),
   takerEmail: document.getElementById('takerEmail'),
@@ -249,6 +258,25 @@ let answers = [];
 let resultsPayload = null;
 let quizInProgress = false;
 let fullscreenExitCount = 0;
+let tabSwitchCount = 0;
+let questionOrder = [];
+let optionOrders = [];
+
+/* ============================================================
+   Preview mode — for you, the test admin, to proofread a test
+   before sending it out. Open the link with ?preview=1 added,
+   e.g. https://yoursite.com/test-001/?preview=1
+   Nothing gets recorded, no retake check, no deadline lockout.
+   ============================================================ */
+const isPreview = new URLSearchParams(window.location.search).get('preview') === '1';
+
+/* ---------- Tab-switch detection (integrity note, not a block) ---------- */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && quizInProgress && !isPreview) {
+    tabSwitchCount++;
+    saveSession();
+  }
+});
 
 /* ============================================================
    Resume-after-refresh support.
@@ -261,17 +289,23 @@ let fullscreenExitCount = 0;
    ============================================================ */
 function sessionKey(){ return 'quizSession_' + TEST_CONFIG.testCode; }
 function saveSession(){
+  if (isPreview) return; // preview runs are never persisted
   try{
     localStorage.setItem(sessionKey(), JSON.stringify({
       takerName: els.takerName.value,
       takerEmail: els.takerEmail.value,
       deadlineForThisAttempt,
       attemptStartSeconds,
-      answers
+      answers,
+      fullscreenExitCount,
+      tabSwitchCount,
+      questionOrder,
+      optionOrders
     }));
   }catch(err){ /* storage unavailable — fail silently, resume just won't work */ }
 }
 function loadSession(){
+  if (isPreview) return null;
   try{
     const raw = localStorage.getItem(sessionKey());
     return raw ? JSON.parse(raw) : null;
@@ -288,9 +322,10 @@ function enterFullscreen(){
   if (req) req.call(el).catch(() => {});
 }
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && quizInProgress) {
+  if (!document.fullscreenElement && quizInProgress && !isPreview) {
     fullscreenExitCount++;
     els.fullscreenBanner.hidden = false;
+    saveSession();
   }
 });
 els.btnReenterFullscreen.addEventListener('click', () => {
@@ -300,11 +335,21 @@ els.btnReenterFullscreen.addEventListener('click', () => {
 
 /* ---------- Warn before an accidental refresh/close ---------- */
 window.addEventListener('beforeunload', (e) => {
-  if (quizInProgress) {
+  if (quizInProgress && !isPreview) {
     e.preventDefault();
     e.returnValue = '';
   }
 });
+
+// Fisher-Yates — used for optional question/option shuffling
+function shuffleArray(arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function pad(n){ return String(n).padStart(2,'0'); }
 
@@ -344,6 +389,7 @@ document.addEventListener('keydown', e => {
 
 /* ---------- Static info ---------- */
 function renderStaticInfo(){
+  els.previewBanner.hidden = !isPreview;
   els.eyebrow.textContent = TEST_CONFIG.testCode;
   els.title.textContent = TEST_CONFIG.title;
   els.intro.textContent = TEST_CONFIG.intro;
@@ -355,9 +401,8 @@ function renderStaticInfo(){
   const deadlineIsValid = !isNaN(deadlineMs);
 
   if (!deadlineIsValid) {
-    // Fail CLOSED, not open: an unparseable deadline must never
-    // silently let everyone in. Month/day need leading zeros,
-    // e.g. "2026-06-25T23:59:59", not "2026-6-25T23:59:59".
+    // Fail CLOSED, not open — even in preview, since this is a real
+    // bug in questions.js you need to see and fix regardless.
     els.metaDeadline.textContent = "invalid date — test blocked";
     els.closedNotice.textContent = 'The deadline in questions.js ("' + TEST_CONFIG.deadline + '") isn\'t a valid date format, so this test is blocked until it\'s fixed. Use YYYY-MM-DD with leading zeros, e.g. 2026-06-25T23:59:59.';
     els.closedNotice.hidden = false;
@@ -366,7 +411,7 @@ function renderStaticInfo(){
   }
 
   els.metaDeadline.textContent = fmtDeadline(TEST_CONFIG.deadline);
-  if (new Date() > new Date(deadlineMs)) {
+  if (!isPreview && new Date() > new Date(deadlineMs)) {
     els.closedNotice.textContent = "This test's deadline has passed. It can no longer be started.";
     els.closedNotice.hidden = false;
     els.btnStart.disabled = true;
@@ -388,48 +433,63 @@ async function checkAlreadySubmitted(email){
   }
 }
 
+/* ---------- Progress indicator ---------- */
+function countAnswered(){
+  return answers.filter(a => a !== null && String(a).trim() !== '').length;
+}
+function updateProgressLabel(){
+  els.progressLabel.textContent = countAnswered() + ' of ' + TEST_CONFIG.questions.length + ' answered';
+}
+
 /* ---------- Questions ---------- */
 function buildQuestions(restoreAnswers){
   els.questionsMount.innerHTML = "";
   answers = restoreAnswers ? restoreAnswers.slice() : TEST_CONFIG.questions.map(() => null);
-  TEST_CONFIG.questions.forEach((q, i) => {
+
+  questionOrder.forEach((qi, displayIdx) => {
+    const q = TEST_CONFIG.questions[qi];
     const wrap = document.createElement('div');
     wrap.className = 'question';
     const num = document.createElement('div');
     num.className = 'q-number';
-    num.textContent = 'Q' + pad(i+1);
+    num.textContent = 'Q' + pad(displayIdx + 1);
     wrap.appendChild(num);
     const prompt = document.createElement('div');
     prompt.className = 'q-prompt';
     prompt.innerHTML = q.prompt + ' <span class="q-points">(' + q.points + (q.points===1?' pt':' pts') + ')</span>';
     wrap.appendChild(prompt);
     if (q.type === 'mc') {
-      q.options.forEach((opt, oi) => {
+      const order = optionOrders[qi] || q.options.map((_, oi) => oi);
+      order.forEach(oi => {
+        const opt = q.options[oi];
         const label = document.createElement('label');
         label.className = 'option';
-        label.innerHTML = `<input type="radio" name="q${i}" value="${oi}"> <span>${opt}</span>`;
+        label.innerHTML = `<input type="radio" name="q${qi}" value="${oi}"> <span>${opt}</span>`;
         const input = label.querySelector('input');
-        if (answers[i] === oi) {
+        if (answers[qi] === oi) {
           input.checked = true;
           label.classList.add('selected');
         }
         input.addEventListener('change', () => {
-          answers[i] = oi;
+          answers[qi] = oi;
           wrap.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
           label.classList.add('selected');
           saveSession();
+          updateProgressLabel();
         });
         wrap.appendChild(label);
       });
     } else if (q.type === 'short') {
       const ta = document.createElement('textarea');
       ta.placeholder = 'Type your answer…';
-      ta.value = answers[i] || '';
-      ta.addEventListener('input', () => { answers[i] = ta.value; saveSession(); });
+      ta.value = answers[qi] || '';
+      ta.addEventListener('input', () => { answers[qi] = ta.value; saveSession(); updateProgressLabel(); });
       wrap.appendChild(ta);
     }
     els.questionsMount.appendChild(wrap);
   });
+
+  updateProgressLabel();
 }
 
 /* ---------- Timer / start / submit ---------- */
@@ -437,11 +497,24 @@ function startTest(resumedSession){
   if (resumedSession) {
     deadlineForThisAttempt = resumedSession.deadlineForThisAttempt;
     attemptStartSeconds = resumedSession.attemptStartSeconds;
+    fullscreenExitCount = resumedSession.fullscreenExitCount || 0;
+    tabSwitchCount = resumedSession.tabSwitchCount || 0;
+    questionOrder = resumedSession.questionOrder || TEST_CONFIG.questions.map((_, i) => i);
+    optionOrders = resumedSession.optionOrders || TEST_CONFIG.questions.map(q => q.type === 'mc' ? q.options.map((_, oi) => oi) : null);
   } else {
     const timeLimitMs = TEST_CONFIG.timeLimitMinutes * 60 * 1000;
     const personalDeadline = Date.now() + timeLimitMs;
     const hardDeadline = new Date(TEST_CONFIG.deadline).getTime();
-    deadlineForThisAttempt = Math.min(personalDeadline, hardDeadline);
+    deadlineForThisAttempt = isPreview ? personalDeadline : Math.min(personalDeadline, hardDeadline);
+    fullscreenExitCount = 0;
+    tabSwitchCount = 0;
+    const baseOrder = TEST_CONFIG.questions.map((_, i) => i);
+    questionOrder = TEST_CONFIG.shuffleQuestions ? shuffleArray(baseOrder) : baseOrder;
+    optionOrders = TEST_CONFIG.questions.map(q => {
+      if (q.type !== 'mc') return null;
+      const baseOptionOrder = q.options.map((_, oi) => oi);
+      return TEST_CONFIG.shuffleOptions ? shuffleArray(baseOptionOrder) : baseOptionOrder;
+    });
   }
   totalSeconds = Math.max(0, Math.round((deadlineForThisAttempt - Date.now()) / 1000));
   if (!resumedSession) attemptStartSeconds = totalSeconds;
@@ -452,7 +525,7 @@ function startTest(resumedSession){
   quizInProgress = true;
 
   if (!resumedSession) {
-    enterFullscreen(); // user just clicked "Start test" — this is a real gesture, fullscreen is allowed
+    if (!isPreview) enterFullscreen(); // user just clicked "Start test" — this is a real gesture, fullscreen is allowed
     saveSession();
   } else {
     // Fullscreen never survives a page reload in any browser — prompt
@@ -514,6 +587,7 @@ function gradeAndBuildResults(autoSubmitted){
     submittedAt: new Date().toISOString(),
     autoSubmittedOnTimeout: autoSubmitted,
     fullscreenExitCount,
+    tabSwitchCount,
     score: { earned, possible, gradableQuestionCount: gradedQuestions },
     answers: review
   };
@@ -575,18 +649,21 @@ async function submitTest(autoSubmitted){
   resultsPayload = gradeAndBuildResults(!!autoSubmitted);
   renderResults(resultsPayload);
 
-  els.syncStatus.textContent = "Recording submission…";
-  const result = await sendToBackend(resultsPayload);
-
-  // Auto-download the report immediately on every submission (both
-  // manual and timeout) so nothing depends on the taker remembering
-  // to click a button. The buttons stay available as a backup/re-download.
   let downloadedOk = true;
   try{
     downloadBlob(buildReportHtml(resultsPayload), 'application/msword', 'doc');
   }catch(err){
     downloadedOk = false;
   }
+
+  if (isPreview) {
+    els.syncStatus.textContent = "Preview mode — nothing was recorded. " +
+      (downloadedOk ? "Your report downloaded automatically so you can check its formatting." : "Automatic download didn't start — use a button below.");
+    return;
+  }
+
+  els.syncStatus.textContent = "Recording submission…";
+  const result = await sendToBackend(resultsPayload);
 
   const recordedMsg = result.ok ? "Submission recorded." : "Couldn't reach the server to record this submission (only affects duplicate-attempt checking).";
   const downloadMsg = downloadedOk
@@ -602,6 +679,10 @@ els.btnStart.addEventListener('click', async () => {
     alert('Please enter your name and email before starting.');
     return;
   }
+  if (isPreview) {
+    startTest();
+    return;
+  }
   els.btnStart.disabled = true;
   els.btnStart.textContent = 'CHECKING…';
   const already = await checkAlreadySubmitted(email);
@@ -614,7 +695,16 @@ els.btnStart.addEventListener('click', async () => {
   startTest();
 });
 
-els.btnSubmit.addEventListener('click', () => submitTest(false));
+els.btnSubmit.addEventListener('click', () => {
+  const unanswered = TEST_CONFIG.questions.length - countAnswered();
+  if (unanswered > 0) {
+    const proceed = confirm(
+      'You have ' + unanswered + ' unanswered question' + (unanswered === 1 ? '' : 's') + '. Submit anyway?'
+    );
+    if (!proceed) return;
+  }
+  submitTest(false);
+});
 
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -650,6 +740,7 @@ function buildReportHtml(payload){
   </p>
   ${payload.score.gradableQuestionCount > 0 ? `<p><b>Score:</b> ${payload.score.earned} / ${payload.score.possible}</p>` : ''}
   <p><b>Left fullscreen during test:</b> ${payload.fullscreenExitCount || 0} time(s)</p>
+  <p><b>Switched away from tab during test:</b> ${payload.tabSwitchCount || 0} time(s)</p>
   <hr>
   ${rows}
 </body>
@@ -668,6 +759,7 @@ function buildReportText(payload){
     lines.push('Score: ' + payload.score.earned + ' / ' + payload.score.possible);
   }
   lines.push('Left fullscreen during test: ' + (payload.fullscreenExitCount || 0) + ' time(s)');
+  lines.push('Switched away from tab during test: ' + (payload.tabSwitchCount || 0) + ' time(s)');
   lines.push('');
   lines.push('='.repeat(60));
   payload.answers.forEach(a => {
@@ -719,6 +811,10 @@ async function init(){
       } else {
         // Time ran out while the page was closed/refreshed — grade
         // and submit whatever was saved, same as a normal timeout.
+        fullscreenExitCount = existing.fullscreenExitCount || 0;
+        tabSwitchCount = existing.tabSwitchCount || 0;
+        questionOrder = existing.questionOrder || TEST_CONFIG.questions.map((_, i) => i);
+        optionOrders = existing.optionOrders || TEST_CONFIG.questions.map(q => q.type === 'mc' ? q.options.map((_, oi) => oi) : null);
         buildQuestions(existing.answers);
         els.screenStart.hidden = true;
         els.screenQuiz.hidden = false;
