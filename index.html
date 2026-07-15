@@ -169,8 +169,9 @@ footer.actions{ display:flex; justify-content: flex-end; padding: 20px 32px 28px
     <div id="scoreBlock"></div>
     <div id="reviewMount"></div>
     <div class="sync-status" id="syncStatus"></div>
-    <footer class="actions" style="padding:24px 0 0;">
-      <button class="ghost" id="btnDownload">Download results (.json)</button>
+    <footer class="actions" style="padding:24px 0 0; gap:10px;">
+      <button class="ghost" id="btnDownloadWord">Download report (.doc)</button>
+      <button class="ghost" id="btnDownloadText">Download report (.txt)</button>
     </footer>
   </section>
 </div>
@@ -230,7 +231,8 @@ const els = {
   scoreBlock: document.getElementById('scoreBlock'),
   reviewMount: document.getElementById('reviewMount'),
   syncStatus: document.getElementById('syncStatus'),
-  btnDownload: document.getElementById('btnDownload'),
+  btnDownloadWord: document.getElementById('btnDownloadWord'),
+  btnDownloadText: document.getElementById('btnDownloadText'),
 };
 
 let timerInterval = null;
@@ -379,6 +381,7 @@ function gradeAndBuildResults(autoSubmitted){
       number: i+1, type: q.type, prompt: q.prompt, points: q.points,
       answerGiven: q.type === 'mc' ? (answers[i] === null ? null : q.options[answers[i]]) : (answers[i] || ""),
       correctAnswer: q.type === 'mc' ? q.options[q.correctIndex] : null,
+      referenceAnswer: q.type === 'short' ? (q.answer || null) : null,
       correct
     };
   });
@@ -418,6 +421,7 @@ function renderResults(payload){
       <div style="font-size:14px;color:var(--ink-soft);">
         Answer given: ${a.answerGiven ? a.answerGiven : '<em>no answer</em>'}
         ${a.correctAnswer ? '<br>Correct answer: ' + a.correctAnswer : ''}
+        ${a.referenceAnswer ? '<br>Reference answer (for your review): ' + a.referenceAnswer : ''}
       </div>`;
     els.reviewMount.appendChild(item);
   });
@@ -441,11 +445,11 @@ async function submitTest(autoSubmitted){
   if (timerInterval) clearInterval(timerInterval);
   resultsPayload = gradeAndBuildResults(!!autoSubmitted);
   renderResults(resultsPayload);
-  els.syncStatus.textContent = "Saving your result…";
+  els.syncStatus.textContent = "Recording submission…";
   const result = await sendToBackend(resultsPayload);
   els.syncStatus.textContent = result.ok
-    ? "Result saved. You're all set."
-    : "Couldn't confirm your result was saved automatically — please also click \"Download results\" below and send it to your test administrator.";
+    ? "Submission recorded. Download your report below and send it to your test administrator."
+    : "Couldn't reach the server to record this submission (this only affects duplicate-attempt checking) — please still download your report below and send it to your test administrator.";
 }
 
 els.btnStart.addEventListener('click', async () => {
@@ -469,15 +473,87 @@ els.btnStart.addEventListener('click', async () => {
 
 els.btnSubmit.addEventListener('click', () => submitTest(false));
 
-els.btnDownload.addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(resultsPayload, null, 2)], { type: 'application/json' });
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function buildReportHtml(payload){
+  const rows = payload.answers.map(a => {
+    let correction;
+    if (a.type === 'mc') {
+      correction = `<p style="color:${a.correct ? '#3C6E52' : '#C4453A'};"><b>${a.correct ? 'Correct' : 'Incorrect'}</b> — correct answer: ${escapeHtml(a.correctAnswer)}</p>`;
+    } else if (a.referenceAnswer) {
+      correction = `<p><i>Reference answer (for your review):</i> ${escapeHtml(a.referenceAnswer)}</p>`;
+    } else {
+      correction = `<p><i>(free-text answer — review manually)</i></p>`;
+    }
+    return `
+      <p style="font-weight:bold;margin-bottom:4px;">Q${pad(a.number)}. ${escapeHtml(a.prompt).replace(/\n/g,'<br>')}</p>
+      <p style="margin-top:0;">Answer given: ${a.answerGiven ? escapeHtml(a.answerGiven) : '<i>no answer</i>'}</p>
+      ${correction}
+      <hr>`;
+  }).join('');
+
+  return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset="utf-8"><title>${escapeHtml(payload.testTitle)}</title></head>
+<body style="font-family:Calibri,Arial,sans-serif;">
+  <h1>${escapeHtml(payload.testTitle)}</h1>
+  <p><b>Test code:</b> ${escapeHtml(payload.testCode)}</p>
+  <p>
+    <b>Name:</b> ${escapeHtml(payload.takerName)}<br>
+    <b>Email:</b> ${escapeHtml(payload.takerEmail)}<br>
+    <b>Submitted:</b> ${new Date(payload.submittedAt).toLocaleString()}${payload.autoSubmittedOnTimeout ? ' (auto-submitted — time ran out)' : ''}
+  </p>
+  ${payload.score.gradableQuestionCount > 0 ? `<p><b>Score:</b> ${payload.score.earned} / ${payload.score.possible}</p>` : ''}
+  <hr>
+  ${rows}
+</body>
+</html>`;
+}
+
+function buildReportText(payload){
+  const lines = [];
+  lines.push(payload.testTitle);
+  lines.push('Test code: ' + payload.testCode);
+  lines.push('Name: ' + payload.takerName);
+  lines.push('Email: ' + payload.takerEmail);
+  lines.push('Submitted: ' + new Date(payload.submittedAt).toLocaleString() + (payload.autoSubmittedOnTimeout ? ' (auto-submitted — time ran out)' : ''));
+  if (payload.score.gradableQuestionCount > 0) {
+    lines.push('Score: ' + payload.score.earned + ' / ' + payload.score.possible);
+  }
+  lines.push('');
+  lines.push('='.repeat(60));
+  payload.answers.forEach(a => {
+    lines.push('');
+    lines.push('Q' + pad(a.number) + '. ' + a.prompt);
+    lines.push('Answer given: ' + (a.answerGiven || '(no answer)'));
+    if (a.type === 'mc') {
+      lines.push((a.correct ? 'CORRECT' : 'INCORRECT') + ' — correct answer: ' + a.correctAnswer);
+    } else if (a.referenceAnswer) {
+      lines.push('Reference answer (for review): ' + a.referenceAnswer);
+    } else {
+      lines.push('(free-text answer — review manually)');
+    }
+  });
+  return lines.join('\n');
+}
+
+function downloadBlob(content, mimeType, extension){
+  const blob = new Blob(extension === 'doc' ? ['\ufeff', content] : [content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const safeName = (resultsPayload.takerName || 'results').replace(/[^a-z0-9]+/gi, '_');
   a.href = url;
-  a.download = `${TEST_CONFIG.testCode.replace(/\s+/g,'_')}_${safeName}.json`;
+  a.download = `${TEST_CONFIG.testCode.replace(/\s+/g,'_')}_${safeName}.${extension}`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+els.btnDownloadWord.addEventListener('click', () => {
+  downloadBlob(buildReportHtml(resultsPayload), 'application/msword', 'doc');
+});
+els.btnDownloadText.addEventListener('click', () => {
+  downloadBlob(buildReportText(resultsPayload), 'text/plain;charset=utf-8', 'txt');
 });
 
 async function init(){
