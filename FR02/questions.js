@@ -18,7 +18,7 @@ const TEST_CONFIG = {
 
   // Set these before this test goes out — see the format guide.
   startDate: "2026-07-17T15:00:00",
-  deadline: "2026-07-17T16:59:59",
+  deadline: "2026-07-17T16:00:00",
 
   // Leave OFF for this test: Q1–Q5 and Q6–Q10 each depend on a
   // shared reading passage — shuffling could separate the passage
