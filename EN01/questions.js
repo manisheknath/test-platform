@@ -14,7 +14,7 @@ const TEST_CONFIG = {
 
   intro: "This test covers reading comprehension, grammar, vocabulary, sentence transformation, and situational writing at B2 level. Read each question carefully and complete all 30 before submitting.",
 
-  timeLimitMinutes: 75,
+  timeLimitMinutes: 60,
 
   // Set these before this test goes out — see the format guide.
   startDate: "2026-07-16T14:00:00",
