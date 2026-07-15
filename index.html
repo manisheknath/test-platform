@@ -152,6 +152,7 @@ footer.actions{ display:flex; justify-content: flex-end; padding: 20px 32px 28px
       <input type="email" id="takerEmail" placeholder="e.g. jordan@email.com">
       <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Used only to stop duplicate attempts and to label your result.</div>
     </div>
+    <p id="notYetOpenNotice" class="notice info" hidden></p>
     <p id="closedNotice" class="notice" hidden>This test's deadline has passed. It can no longer be started.</p>
     <p id="retakeNotice" class="notice" hidden>Our records show this email has already submitted this test. Contact your test administrator if you think this is a mistake.</p>
     <button class="primary" id="btnStart">Start test</button>
@@ -237,6 +238,7 @@ const els = {
   takerName: document.getElementById('takerName'),
   takerEmail: document.getElementById('takerEmail'),
   closedNotice: document.getElementById('closedNotice'),
+  notYetOpenNotice: document.getElementById('notYetOpenNotice'),
   retakeNotice: document.getElementById('retakeNotice'),
   btnStart: document.getElementById('btnStart'),
   timerClock: document.getElementById('timerClock'),
@@ -378,6 +380,31 @@ function backendConfigured(){
   return ENGINE_CONFIG.appsScriptUrl && !ENGINE_CONFIG.appsScriptUrl.includes('PASTE_YOUR');
 }
 
+let notYetOpenInterval = null;
+function startNotYetOpenCountdown(startMs){
+  if (notYetOpenInterval) clearInterval(notYetOpenInterval);
+  els.notYetOpenNotice.hidden = false;
+
+  function tick(){
+    const remainingMs = startMs - Date.now();
+    if (remainingMs <= 0) {
+      clearInterval(notYetOpenInterval);
+      els.notYetOpenNotice.hidden = true;
+      renderStaticInfo(); // re-run all checks now that the start time has arrived
+      return;
+    }
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const countdown = (days > 0 ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+    els.notYetOpenNotice.textContent = 'This test opens ' + formatDateTime(startMs) + ' — starts in ' + countdown + '.';
+  }
+  tick();
+  notYetOpenInterval = setInterval(tick, 1000);
+}
+
 /* ---------- Anti copy/paste (deterrent, not foolproof) ---------- */
 ['copy','cut','paste','contextmenu'].forEach(evt => {
   document.addEventListener(evt, e => e.preventDefault());
@@ -413,6 +440,27 @@ function renderStaticInfo(){
   }
 
   els.metaDeadline.textContent = fmtDeadline(TEST_CONFIG.deadline);
+
+  // Optional start date/time — an admin-only scheduling control, not
+  // shown as a permanent label the way the deadline is. Someone who
+  // arrives early just sees a countdown, nothing before that.
+  if (TEST_CONFIG.startDate && !isPreview) {
+    const startMs = new Date(TEST_CONFIG.startDate).getTime();
+    const startIsValid = !isNaN(startMs);
+    if (!startIsValid) {
+      // Fail CLOSED, same principle as an invalid deadline.
+      els.closedNotice.textContent = 'The start time in questions.js ("' + TEST_CONFIG.startDate + '") isn\'t a valid date format, so this test is blocked until it\'s fixed. Use YYYY-MM-DD with leading zeros, e.g. 2026-06-25T09:00:00.';
+      els.closedNotice.hidden = false;
+      els.btnStart.disabled = true;
+      return;
+    }
+    if (Date.now() < startMs) {
+      els.btnStart.disabled = true;
+      startNotYetOpenCountdown(startMs);
+      return;
+    }
+  }
+
   if (!isPreview && new Date() > new Date(deadlineMs)) {
     els.closedNotice.textContent = "This test's deadline has passed. It can no longer be started.";
     els.closedNotice.hidden = false;
