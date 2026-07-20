@@ -16,8 +16,8 @@ const TEST_CONFIG = {
   timeLimitMinutes: 20,
 
   // Set these before this test goes out — see the format guide.
-  startDate: "",
-  deadline: "",
+  startDate: "2026-07-21T15:00:00",
+  deadline: "2026-07-21T16:00:00",
 
   // Fun trivia quiz, no reading passages or dependent questions,
   // so it's safe to shuffle if you'd like.
