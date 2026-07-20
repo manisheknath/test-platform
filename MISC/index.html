@@ -118,6 +118,8 @@ button.ghost:hover{ border-color: var(--ink-soft); color: var(--ink); }
 .tag.correct{ background: #E7F0EA; color: var(--accent-calm); }
 .tag.incorrect{ background: #FBEEEC; color: var(--accent-alert); }
 .tag.ungraded{ background: var(--paper); color: var(--ink-soft); }
+.explanation-box{ margin-top: 10px; padding: 10px 12px; background: var(--paper); border-left: 3px solid var(--ink-soft); font-size: 14px; line-height: 1.5; color: var(--ink); }
+.explanation-box b{ font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); display:block; margin-bottom: 4px; }
 .sync-status{ font-family: var(--mono); font-size: 12px; color: var(--ink-soft); text-align:center; padding: 8px 0 0; }
 .progress-label{ font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--ink-soft); text-align: right; margin-top: 6px; }
 .preview-banner{
@@ -624,6 +626,7 @@ function gradeAndBuildResults(autoSubmitted){
       answerGiven: q.type === 'mc' ? (answers[i] === null ? null : q.options[answers[i]]) : (answers[i] || ""),
       correctAnswer: q.type === 'mc' ? q.options[q.correctIndex] : null,
       referenceAnswer: q.type === 'short' ? (q.answer || null) : null,
+      explanation: q.explanation || null,
       correct
     };
   });
@@ -667,7 +670,8 @@ function renderResults(payload){
         Answer given: ${a.answerGiven ? a.answerGiven : '<em>no answer</em>'}
         ${a.correctAnswer ? '<br>Correct answer: ' + a.correctAnswer : ''}
         ${a.referenceAnswer ? '<br>Reference answer (for your review): ' + a.referenceAnswer : ''}
-      </div>`;
+      </div>
+      ${a.explanation ? '<div class="explanation-box"><b>Explanation</b>' + a.explanation + '</div>' : ''}`;
     els.reviewMount.appendChild(item);
   });
 }
@@ -779,10 +783,14 @@ function buildReportHtml(payload){
     } else {
       correction = `<p><i>(free-text answer — review manually)</i></p>`;
     }
+    const explanationBlock = a.explanation
+      ? `<p style="background:#ECEFEA;border-left:3px solid #435363;padding:8px 10px;margin:6px 0;"><b>Explanation:</b> ${escapeHtml(a.explanation)}</p>`
+      : '';
     return `
       <p style="font-weight:bold;margin-bottom:4px;">Q${pad(a.number)}. ${escapeHtml(a.prompt).replace(/\n/g,'<br>')}</p>
       <p style="margin-top:0;">Answer given: ${a.answerGiven ? escapeHtml(a.answerGiven) : '<i>no answer</i>'}</p>
       ${correction}
+      ${explanationBlock}
       <hr>`;
   }).join('');
 
@@ -831,6 +839,9 @@ function buildReportText(payload){
       lines.push('Reference answer (for review): ' + a.referenceAnswer);
     } else {
       lines.push('(free-text answer — review manually)');
+    }
+    if (a.explanation) {
+      lines.push('Explanation: ' + a.explanation);
     }
   });
   return lines.join('\n');
